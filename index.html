@@ -1,7 +1,31 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Colin’s Aurora Cam</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="style.css">
+</head>
 <body>
-<h1>Hello World</h1>
-<p>I'm hosted with GitHub Pages.</p>
+    <h1>Colin’s Aurora Cam</h1>
+    <div class="img-container">
+        <img id="aurora-img" src="latest.jpg?ts=0" alt="Latest Aurora Image">
+    </div>
+    <div class="caption">Image updates every 12 seconds.</div>
+    <footer>
+        <p>
+            <a href="https://aurora.live">Aurora Forecast</a> |
+            <a href="https://colinja.sh">colinja.sh</a>
+        </p>
+    </footer>
+    <script>
+        function refreshImage() {
+            var img = document.getElementById('aurora-img');
+            var ts = new Date().getTime();
+            img.src = 'latest.jpg?ts=' + ts;
+        }
+        setInterval(refreshImage, 12000);
+        window.onload = refreshImage;
+    </script>
 </body>
 </html>
