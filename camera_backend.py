@@ -6,6 +6,7 @@ app = Flask(__name__)
 app.secret_key = 'your_super_secret_key_here'  # CHANGE THIS!
 
 CONFIG_PATH = '/home/pi/camera_config.json'
+LATEST_IMAGE_PATH = '/home/pi/latest.jpg'  # Path to latest image
 USERNAME = 'admin'            # Change these!
 PASSWORD = 'your_password'    # Change these!
 
@@ -91,7 +92,20 @@ def settings():
             message = "Settings updated!"
         except Exception as e:
             message = f"Error saving settings: {e}"
-    return render_template_string(SETTINGS_HTML, config=config, message=message)
+
+    # Construct image URL with timestamp to avoid caching
+    image_url = "/latest.jpg?ts=" + str(int(os.path.getmtime(LATEST_IMAGE_PATH))) if os.path.exists(LATEST_IMAGE_PATH) else ""
+
+    return render_template_string(SETTINGS_HTML, config=config, message=message, image_url=image_url)
+
+@app.route('/latest.jpg')
+@login_required
+def latest_image():
+    # Serve the latest image file securely
+    from flask import send_file
+    if os.path.exists(LATEST_IMAGE_PATH):
+        return send_file(LATEST_IMAGE_PATH, mimetype='image/jpeg')
+    return "Image not found", 404
 
 # Optional: an API endpoint for feedback from frontend if needed
 @app.route('/api/feedback', methods=['POST'])
@@ -231,7 +245,7 @@ SETTINGS_HTML = '''
     letter-spacing: 0.08em;
     text-transform: uppercase;
     font-size: 2rem;
-    margin-bottom: 2rem;
+    margin-bottom: 1.8rem;
     color: #a3cdfd;
     text-shadow: 0 0 6px #3f9eff99;
   }
@@ -285,119 +299,4 @@ SETTINGS_HTML = '''
   }
   input[type="number"].zoom-input {
     width: 3.6em;
-    padding: 0.23em 0.3em;
-    border-radius: 0.5em;
-    border: none;
-    background: #14233a;
-    color: #e0e7ff;
-    font-size: 1.02rem;
-    margin-left: 0.2em;
-    margin-right: 0.5em;
-    box-sizing: border-box;
-  }
-  .checkbox-group {
-    margin-top: 0.8rem;
-    margin-bottom: 0.7rem;
-    display: flex;
-    align-items: center;
-    gap: 0.5em;
-  }
-  input[type="submit"] {
-    background: linear-gradient(90deg, #63b3ed, #4299e1 60%, #3182ce);
-    color: #fff;
-    border: none;
-    border-radius: 0.7rem;
-    font-size: 1.13rem;
-    padding: 0.7rem 2.1rem;
-    margin-top: 0.4rem;
-    cursor: pointer;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-    box-shadow: 0 3px 15px #1e90ff33;
-    transition: background 0.2s, box-shadow 0.2s;
-  }
-  input[type="submit"]:hover {
-    background: linear-gradient(90deg, #4299e1, #3182ce 80%);
-    box-shadow: 0 6px 25px #1e90ff66;
-  }
-  .message {
-    color: #51ffb0;
-    background: #1d2b3aee;
-    border-radius: 0.5rem;
-    padding: 0.5rem 1rem;
-    margin-bottom: 1.2rem;
-    font-weight: 600;
-    letter-spacing: 0.03em;
-  }
-  .logout-link {
-    margin-top: 2rem;
-    color: #a3cdfd;
-    text-decoration: none;
-    font-weight: 500;
-    letter-spacing: 0.03em;
-    font-size: 1.07rem;
-    transition: color 0.2s;
-    display: inline-block;
-  }
-  .logout-link:hover {
-    color: #d1e9ff;
-    text-decoration: underline;
-  }
-</style>
-</head>
-<body>
-  <div class="panel-container">
-    <h2>Camera Control</h2>
-    {% if message %}<div class="message">{{ message }}</div>{% endif %}
-    <form method="post">
-      <div class="slider-group">
-        <label for="brightness">Brightness: <span class="slider-value" id="brightness-value">{{ config['brightness'] }}</span></label>
-        <input name="brightness" id="brightness" type="range" min="0" max="100" value="{{ config['brightness'] }}" oninput="document.getElementById('brightness-value').innerText = this.value">
-      </div>
-      <div class="slider-group">
-        <label for="exposure_comp">Exposure (EV): <span class="slider-value" id="exposure-value">{{ config['exposure_comp'] }}</span></label>
-        <input name="exposure_comp" id="exposure_comp" type="range" min="-25" max="25" step="0.1" value="{{ config['exposure_comp'] }}"
-        oninput="document.getElementById('exposure-value').innerText = this.value">
-      </div>
-      <div class="slider-group">
-        <label for="contrast">Contrast: <span class="slider-value" id="contrast-value">{{ config['contrast'] }}</span></label>
-        <input name="contrast" id="contrast" type="range" min="-100" max="100" value="{{ config['contrast'] }}" 
-        oninput="document.getElementById('contrast-value').innerText = this.value">
-      </div>
-      <div class="slider-group">
-        <label for="sharpness">Sharpness: <span class="slider-value" id="sharpness-value">{{ config['sharpness'] }}</span></label>
-        <input name="sharpness" id="sharpness" type="range" min="-100" max="100" value="{{ config['sharpness'] }}" 
-        oninput="document.getElementById('sharpness-value').innerText = this.value">
-      </div>
-      <div class="slider-group">
-        <label for="saturation">Saturation: <span class="slider-value" id="saturation-value">{{ config['saturation'] }}</span></label>
-        <input name="saturation" id="saturation" type="range" min="-100" max="100" value="{{ config['saturation'] }}"
-        oninput="document.getElementById('saturation-value').innerText = this.value">
-      </div>
-      <div>
-        <label>Zoom:</label>
-        <div class="zoom-group">
-          <span class="zoom-label">X</span>
-          <input name="zoom_x" class="zoom-input" type="number" step="0.01" min="0" max="1" value="{{ config['zoom'][0] }}">
-          <span class="zoom-label">Y</span>
-          <input name="zoom_y" class="zoom-input" type="number" step="0.01" min="0" max="1" value="{{ config['zoom'][1] }}">
-          <span class="zoom-label">W</span>
-          <input name="zoom_w" class="zoom-input" type="number" step="0.01" min="0.01" max="1" value="{{ config['zoom'][2] }}">
-          <span class="zoom-label">H</span>
-          <input name="zoom_h" class="zoom-input" type="number" step="0.01" min="0.01" max="1" value="{{ config['zoom'][3] }}">
-        </div>
-      </div>
-      <div class="checkbox-group">
-        <input name="ai_enhance" id="ai_enhance" type="checkbox" {% if config.get('ai_enhance') %}checked{% endif %}>
-        <label for="ai_enhance" style="margin:0;">AI Enhance</label>
-      </div>
-      <input type="submit" value="Update">
-    </form>
-    <a class="logout-link" href="{{ url_for('logout') }}">Logout</a>
-  </div>
-</body>
-</html>
-'''
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    padding: 0.
