@@ -1,40 +1,66 @@
-from flask import Flask, render_template_string, request, redirect, url_for, session
+from flask import Flask, render_template_string, request, redirect, url_for, session, jsonify
 import json
 import os
 
-CONFIG_PATH = '/home/pi/camera_config.json'
-SECRET_KEY = 'change_this_to_a_random_secret'
-USERNAME = 'admin'
-PASSWORD = 'your_strong_password'  # Change this!
-
 app = Flask(__name__)
-app.secret_key = SECRET_KEY
+app.secret_key = 'your_super_secret_key_here'  # CHANGE THIS!
 
-def get_config():
+CONFIG_PATH = '/home/pi/camera_config.json'
+USERNAME = 'admin'            # Change these!
+PASSWORD = 'your_password'    # Change these!
+
+# Default config for first run
+DEFAULT_CONFIG = {
+    'brightness': 50,
+    'exposure_comp': 0.0,
+    'contrast': 0,
+    'sharpness': 0,
+    'saturation': 0,
+    'zoom': [0.0, 0.0, 1.0, 1.0],
+    'ai_enhance': False
+}
+
+def load_config():
     if os.path.exists(CONFIG_PATH):
-        with open(CONFIG_PATH) as f:
-            return json.load(f)
-    # fallback defaults
-    return {
-        "brightness": 0.5,
-        "exposure_time": None,
-        "analogue_gain": None,
-        "zoom": [0.0, 0.0, 1.0, 1.0]
-    }
+        try:
+            with open(CONFIG_PATH, 'r') as f:
+                config = json.load(f)
+                # Ensure all keys are present
+                for k, v in DEFAULT_CONFIG.items():
+                    if k not in config:
+                        config[k] = v
+                return config
+        except Exception as e:
+            print("Error loading config:", e)
+    return DEFAULT_CONFIG.copy()
 
-def set_config(cfg):
+def save_config(config):
     with open(CONFIG_PATH, 'w') as f:
-        json.dump(cfg, f)
+        json.dump(config, f, indent=2)
+
+def is_logged_in():
+    return session.get('logged_in', False)
+
+def login_required(func):
+    from functools import wraps
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if not is_logged_in():
+            return redirect(url_for('login'))
+        return func(*args, **kwargs)
+    return wrapper
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     error = None
     if request.method == 'POST':
-        if request.form['username'] == USERNAME and request.form['password'] == PASSWORD:
+        username = request.form.get('username', '')
+        password = request.form.get('password', '')
+        if username == USERNAME and password == PASSWORD:
             session['logged_in'] = True
             return redirect(url_for('settings'))
         else:
-            error = 'Invalid credentials'
+            error = "Invalid username or password."
     return render_template_string(LOGIN_HTML, error=error)
 
 @app.route('/logout')
@@ -43,24 +69,37 @@ def logout():
     return redirect(url_for('login'))
 
 @app.route('/', methods=['GET', 'POST'])
+@login_required
 def settings():
-    if not session.get('logged_in'):
-        return redirect(url_for('login'))
-    config = get_config()
+    config = load_config()
     message = None
     if request.method == 'POST':
-        config['brightness'] = float(request.form['brightness'])
-        config['exposure_time'] = int(request.form['exposure_time']) if request.form['exposure_time'] else None
-        config['analogue_gain'] = float(request.form['analogue_gain']) if request.form['analogue_gain'] else None
-        config['zoom'] = [
-            float(request.form['zoom_x']),
-            float(request.form['zoom_y']),
-            float(request.form['zoom_w']),
-            float(request.form['zoom_h'])
-        ]
-        set_config(config)
-        message = "Settings updated!"
+        try:
+            config['brightness'] = int(request.form['brightness'])
+            config['exposure_comp'] = float(request.form['exposure_comp'])
+            config['contrast'] = int(request.form['contrast'])
+            config['sharpness'] = int(request.form['sharpness'])
+            config['saturation'] = int(request.form['saturation'])
+            config['zoom'] = [
+                float(request.form['zoom_x']),
+                float(request.form['zoom_y']),
+                float(request.form['zoom_w']),
+                float(request.form['zoom_h'])
+            ]
+            config['ai_enhance'] = 'ai_enhance' in request.form
+            save_config(config)
+            message = "Settings updated!"
+        except Exception as e:
+            message = f"Error saving settings: {e}"
     return render_template_string(SETTINGS_HTML, config=config, message=message)
+
+# Optional: an API endpoint for feedback from frontend if needed
+@app.route('/api/feedback', methods=['POST'])
+def api_feedback():
+    data = request.json
+    print(f"Feedback received: {data}")
+    # You could save feedback to a file or DB here
+    return jsonify({"message": "Thanks for your feedback!"})
 
 LOGIN_HTML = '''
 <!DOCTYPE html>
@@ -159,7 +198,6 @@ LOGIN_HTML = '''
 </html>
 '''
 
-
 SETTINGS_HTML = '''
 <!DOCTYPE html>
 <html lang="en">
@@ -185,7 +223,7 @@ SETTINGS_HTML = '''
     box-shadow: 0 0 40px #1e90ff66, 0 0 1.5rem #27374a44;
     padding: 2.5rem 2rem 2rem 2rem;
     margin-top: 3.5rem;
-    max-width: 410px;
+    max-width: 430px;
     width: 100%;
     text-align: center;
   }
@@ -200,42 +238,78 @@ SETTINGS_HTML = '''
   form {
     display: flex;
     flex-direction: column;
-    gap: 1.1rem;
+    gap: 1.3rem;
     align-items: center;
+  }
+  .slider-group {
+    width: 100%;
+    margin-bottom: 0.7rem;
   }
   label {
     display: block;
-    margin-bottom: 0.3rem;
+    margin-bottom: 0.35rem;
     color: #8ab4f8;
-    font-size: 1.09rem;
+    font-size: 1.08rem;
     letter-spacing: 0.01em;
     font-weight: 500;
+    text-align: left;
   }
-  input[type="number"], select {
-    padding: 0.6rem 1rem;
-    border-radius: 0.7rem;
+  input[type="range"] {
+    width: 85%;
+    margin: 0.3rem 0;
+    accent-color: #4299e1;
+  }
+  .slider-value {
+    display: inline-block;
+    min-width: 2.2em;
+    text-align: right;
+    margin-left: 0.6em;
+    color: #51ffb0;
+    font-weight: 700;
+    font-size: 1.07rem;
+  }
+  .zoom-group {
+    display: flex;
+    flex-direction: row;
+    gap: 0.35rem;
+    margin-top: 0.3rem;
+    justify-content: center;
+    align-items: center;
+  }
+  .zoom-label {
+    width: 3.2em;
+    color: #8ab4f8;
+    font-size: 1.01rem;
+    font-weight: 500;
+    text-align: right;
+  }
+  input[type="number"].zoom-input {
+    width: 3.6em;
+    padding: 0.23em 0.3em;
+    border-radius: 0.5em;
     border: none;
     background: #14233a;
     color: #e0e7ff;
-    font-size: 1.1rem;
-    margin-bottom: 0.1rem;
-    width: 80%;
+    font-size: 1.02rem;
+    margin-left: 0.2em;
+    margin-right: 0.5em;
     box-sizing: border-box;
-    transition: box-shadow 0.2s;
-    box-shadow: 0 0 0 #4b9fff00;
   }
-  input[type="number"]:focus, select:focus {
-    outline: none;
-    box-shadow: 0 0 10px #46a2ff55;
+  .checkbox-group {
+    margin-top: 0.8rem;
+    margin-bottom: 0.7rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
   }
   input[type="submit"] {
     background: linear-gradient(90deg, #63b3ed, #4299e1 60%, #3182ce);
     color: #fff;
     border: none;
     border-radius: 0.7rem;
-    font-size: 1.11rem;
+    font-size: 1.13rem;
     padding: 0.7rem 2.1rem;
-    margin-top: 0.6rem;
+    margin-top: 0.4rem;
     cursor: pointer;
     font-weight: 700;
     letter-spacing: 0.05em;
@@ -276,24 +350,46 @@ SETTINGS_HTML = '''
     <h2>Camera Control</h2>
     {% if message %}<div class="message">{{ message }}</div>{% endif %}
     <form method="post">
-      <div>
-        <label for="brightness">Brightness (0-100):</label>
-        <input name="brightness" id="brightness" type="number" min="0" max="100" value="{{ config['brightness'] }}">
+      <div class="slider-group">
+        <label for="brightness">Brightness: <span class="slider-value" id="brightness-value">{{ config['brightness'] }}</span></label>
+        <input name="brightness" id="brightness" type="range" min="0" max="100" value="{{ config['brightness'] }}" oninput="document.getElementById('brightness-value').innerText = this.value">
+      </div>
+      <div class="slider-group">
+        <label for="exposure_comp">Exposure (EV): <span class="slider-value" id="exposure-value">{{ config['exposure_comp'] }}</span></label>
+        <input name="exposure_comp" id="exposure_comp" type="range" min="-25" max="25" step="0.1" value="{{ config['exposure_comp'] }}"
+        oninput="document.getElementById('exposure-value').innerText = this.value">
+      </div>
+      <div class="slider-group">
+        <label for="contrast">Contrast: <span class="slider-value" id="contrast-value">{{ config['contrast'] }}</span></label>
+        <input name="contrast" id="contrast" type="range" min="-100" max="100" value="{{ config['contrast'] }}" 
+        oninput="document.getElementById('contrast-value').innerText = this.value">
+      </div>
+      <div class="slider-group">
+        <label for="sharpness">Sharpness: <span class="slider-value" id="sharpness-value">{{ config['sharpness'] }}</span></label>
+        <input name="sharpness" id="sharpness" type="range" min="-100" max="100" value="{{ config['sharpness'] }}" 
+        oninput="document.getElementById('sharpness-value').innerText = this.value">
+      </div>
+      <div class="slider-group">
+        <label for="saturation">Saturation: <span class="slider-value" id="saturation-value">{{ config['saturation'] }}</span></label>
+        <input name="saturation" id="saturation" type="range" min="-100" max="100" value="{{ config['saturation'] }}"
+        oninput="document.getElementById('saturation-value').innerText = this.value">
       </div>
       <div>
-        <label for="exposure_mode">Exposure Mode:</label>
-        <select name="exposure_mode" id="exposure_mode">
-          {% for mode in ['auto','night','backlight','spotlight','sports','snow','beach','verylong','fixedfps','antishake','fireworks'] %}
-          <option value="{{mode}}" {% if config['exposure_mode']==mode %}selected{% endif %}>{{mode}}</option>
-          {% endfor %}
-        </select>
+        <label>Zoom:</label>
+        <div class="zoom-group">
+          <span class="zoom-label">X</span>
+          <input name="zoom_x" class="zoom-input" type="number" step="0.01" min="0" max="1" value="{{ config['zoom'][0] }}">
+          <span class="zoom-label">Y</span>
+          <input name="zoom_y" class="zoom-input" type="number" step="0.01" min="0" max="1" value="{{ config['zoom'][1] }}">
+          <span class="zoom-label">W</span>
+          <input name="zoom_w" class="zoom-input" type="number" step="0.01" min="0.01" max="1" value="{{ config['zoom'][2] }}">
+          <span class="zoom-label">H</span>
+          <input name="zoom_h" class="zoom-input" type="number" step="0.01" min="0.01" max="1" value="{{ config['zoom'][3] }}">
+        </div>
       </div>
-      <div>
-        <label>Zoom (x, y, w, h):</label>
-        <input name="zoom_x" type="number" step="0.01" min="0" max="1" value="{{ config['zoom'][0] }}" style="width:22%">
-        <input name="zoom_y" type="number" step="0.01" min="0" max="1" value="{{ config['zoom'][1] }}" style="width:22%">
-        <input name="zoom_w" type="number" step="0.01" min="0.01" max="1" value="{{ config['zoom'][2] }}" style="width:22%">
-        <input name="zoom_h" type="number" step="0.01" min="0.01" max="1" value="{{ config['zoom'][3] }}" style="width:22%">
+      <div class="checkbox-group">
+        <input name="ai_enhance" id="ai_enhance" type="checkbox" {% if config.get('ai_enhance') %}checked{% endif %}>
+        <label for="ai_enhance" style="margin:0;">AI Enhance</label>
       </div>
       <input type="submit" value="Update">
     </form>
@@ -304,4 +400,4 @@ SETTINGS_HTML = '''
 '''
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000)
