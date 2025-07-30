@@ -7,6 +7,10 @@
         .comparison { display: flex; justify-content: space-around; }
         table { border-collapse: collapse; }
         th, td { border: 1px solid #ccc; padding: 8px; }
+        .similarity { font-weight: bold; color: #2e7d32; }
+        .error { color: red; }
+        .suggestions { margin-top: 10px; }
+        .suggestion { cursor: pointer; color: blue; text-decoration: underline; }
     </style>
 </head>
 <body>
@@ -17,11 +21,35 @@
     <div id="result"></div>
 
     <script>
-        // Load CSV (you can host stats.csv on GitHub or parse it client-side)
+        // Levenshtein distance for fuzzy matching
+        function levenshtein(a, b) {
+            const matrix = Array(b.length + 1).fill().map(() => Array(a.length + 1).fill(0));
+            for (let i = 0; i <= a.length; i++) matrix[0][i] = i;
+            for (let j = 0; j <= b.length; j++) matrix[j][0] = j;
+            for (let j = 1; j <= b.length; j++) {
+                for (let i = 1; i <= a.length; i++) {
+                    const indicator = a[i - 1].toLowerCase() === b[j - 1].toLowerCase() ? 0 : 1;
+                    matrix[j][i] = Math.min(
+                        matrix[j - 1][i] + 1, // deletion
+                        matrix[j][i - 1] + 1, // insertion
+                        matrix[j - 1][i - 1] + indicator // substitution
+                    );
+                }
+            }
+            return matrix[b.length][a.length];
+        }
+
         async function loadCSV() {
-            const response = await fetch('stats.csv');
-            const text = await response.text();
-            return text.split('\n').map(line => line.split(','));
+            try {
+                const response = await fetch('stats.csv');
+                if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+                const text = await response.text();
+                return text.split('\n').map(line => line.split(','));
+            } catch (error) {
+                console.error('Error loading CSV:', error);
+                document.getElementById('result').innerHTML = '<p class="error">Failed to load stats.csv. Ensure the file is in the repository.</p>';
+                return [];
+            }
         }
 
         function calculateSimilarity(p1, p2) {
@@ -31,31 +59,47 @@
             return Math.sqrt(avgDiff * avgDiff + obpDiff * obpDiff + slgDiff * slgDiff);
         }
 
+        function distanceToPercentage(distance) {
+            const scale = 50;
+            return (100 * Math.exp(-distance / scale)).toFixed(2);
+        }
+
         async function findSimilar() {
+            document.getElementById('result').innerHTML = 'Loading...';
             const name = document.getElementById('playerName').value.trim();
             const season = parseInt(document.getElementById('season').value);
             if (!name || season < 2008 || season > 2025) {
-                document.getElementById('result').innerHTML = 'Invalid input';
+                document.getElementById('result').innerHTML = '<p class="error">Please enter a valid player name and season (2008-2025).</p>';
                 return;
             }
 
             const data = await loadCSV();
-            const players = data.slice(1).map(row => ({
-                name: row[9].replace(/"/g, ''),
-                season: parseInt(row[0]),
-                team: row[1].replace(/"/g, ''),
-                pos: row[2].replace(/"/g, ''),
-                wrc_plus: parseFloat(row[3]),
-                avg_plus: parseFloat(row[4]),
-                obp_plus: parseFloat(row[5]),
-                slg_plus: parseFloat(row[6]),
-                hr: parseInt(row[7]),
-                pa: parseInt(row[8])
+            if (!data.length) return;
+
+            const players = data.slice(1).filter(row => row.length >= 10).map(row => ({
+                name: row[9].replace(/"/g, '').trim(),
+                season: parseInt(row[0]) || 0,
+                team: row[1].replace(/"/g, '').trim(),
+                pos: row[2].replace(/"/g, '').trim(),
+                wrc_plus: parseFloat(row[3]) || 0,
+                avg_plus: parseFloat(row[4]) || 0,
+                obp_plus: parseFloat(row[5]) || 0,
+                slg_plus: parseFloat(row[6]) || 0,
+                hr: parseInt(row[7]) || 0,
+                pa: parseInt(row[8]) || 0
             }));
 
             const inputPlayer = players.find(p => p.name.toLowerCase() === name.toLowerCase() && p.season === season);
             if (!inputPlayer) {
-                document.getElementById('result').innerHTML = 'Player not found';
+                // Find close matches using Levenshtein distance
+                const suggestions = players
+                    .filter(p => p.season === season && levenshtein(p.name.toLowerCase(), name.toLowerCase()) <= 3)
+                    .slice(0, 5)
+                    .map(p => `<span class="suggestion" onclick="document.getElementById('playerName').value = '${p.name}'; findSimilar();">${p.name}</span>`);
+                document.getElementById('result').innerHTML = `
+                    <p class="error">Player '${name}' not found for season ${season}.</p>
+                    ${suggestions.length ? '<p class="suggestions">Did you mean: ' + suggestions.join(', ') + '?</p>' : ''}
+                `;
                 return;
             }
 
@@ -73,6 +117,7 @@
             }
 
             if (mostSimilar) {
+                const similarityPercentage = distanceToPercentage(minDistance);
                 document.getElementById('result').innerHTML = `
                     <div class="comparison">
                         <table>
@@ -86,10 +131,11 @@
                             <tr><td>SLG%+</td><td>${inputPlayer.slg_plus.toFixed(2)}</td><td>${mostSimilar.slg_plus.toFixed(2)}</td></tr>
                             <tr><td>HR</td><td>${inputPlayer.hr}</td><td>${mostSimilar.hr}</td></tr>
                             <tr><td>PA</td><td>${inputPlayer.pa}</td><td>${mostSimilar.pa}</td></tr>
+                            <tr><td>Similarity</td><td colspan="2" class="similarity">${similarityPercentage}%</td></tr>
                         </table>
                     </div>`;
             } else {
-                document.getElementById('result').innerHTML = 'No similar players found';
+                document.getElementById('result').innerHTML = '<p class="error">No similar players found for this position and wRC+ range.</p>';
             }
         }
     </script>
