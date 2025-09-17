@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BrewStats - Milwaukee Brewers Organization</title>
+    <title>Player Stats - BrewStats</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -14,15 +14,15 @@
         </div>
     </header>
 
-    <main class="container">
-        <section class="search-section">
-            <input type="text" id="player-search" placeholder="Search players..." class="search-input">
-        </section>
+    <nav class="breadcrumb">
+        <div class="container">
+            <a href="index.html">← Back to All Players</a>
+        </div>
+    </nav>
 
-        <section class="players-section">
-            <div id="loading" class="loading">Loading players...</div>
-            <div id="players-list" class="players-list"></div>
-        </section>
+    <main class="container">
+        <div id="loading" class="loading">Loading player stats...</div>
+        <div id="player-stats" class="player-stats-container"></div>
     </main>
 
     <footer class="retro-footer">
@@ -32,6 +32,6 @@
         </div>
     </footer>
 
-    <script src="script.js"></script>
+    <script src="player.js"></script>
 </body>
 </html>
